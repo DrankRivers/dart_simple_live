@@ -1,0 +1,94 @@
+name: 全平台自动编译 (All in One)
+
+on:
+  workflow_dispatch: # 允许手动点击按钮触发
+
+jobs:
+  # 任务1: 编译 Android APK
+  build-android:
+    name: 📱 Android 构建
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: 设置 Java 环境
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+      - name: 设置 Flutter 环境
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+      - name: 下载依赖
+        working-directory: ./simple_live_app
+        run: flutter pub get
+      - name: 开始编译 APK
+        working-directory: ./simple_live_app
+        run: flutter build apk --release 
+      - name: 上传 Android 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: SimpleLive-Android
+          path: ./simple_live_app/build/app/outputs/flutter-apk/app-release.apk
+
+  # 任务2: 编译 Windows EXE
+  build-windows:
+    name: 💻 Windows 构建
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: 设置 Flutter 环境
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+      - name: 开启 Windows 支持
+        run: flutter config --enable-windows-desktop
+      - name: 下载依赖
+        working-directory: ./simple_live_app
+        run: flutter pub get
+      - name: 开始编译 Windows
+        working-directory: ./simple_live_app
+        run: flutter build windows --release
+      - name: 打包成 Zip
+        run: |
+          cd simple_live_app/build/windows/x64/runner/Release
+          7z a SimpleLive-Windows.zip .
+        shell: bash
+      - name: 上传 Windows 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: SimpleLive-Windows
+          path: simple_live_app/build/windows/x64/runner/Release/SimpleLive-Windows.zip
+
+  # 任务3: 编译 iOS IPA (TrollStore 专用)
+  build-ios:
+    name: 🍎 iOS 构建 (无签名)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: 设置 Flutter 环境
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          architecture: x64
+      - name: 下载依赖
+        working-directory: ./simple_live_app
+        run: flutter pub get
+      - name: 安装 iOS 依赖 (Pod)
+        working-directory: ./simple_live_app/ios
+        run: pod install --repo-update
+      - name: 开始编译 (跳过签名)
+        working-directory: ./simple_live_app
+        # 关键参数 --no-codesign，生成未加密的二进制文件
+        run: flutter build ios --release --no-codesign
+      - name: 打包成 IPA
+        working-directory: ./simple_live_app
+        run: |
+          mkdir Payload
+          mv build/ios/iphoneos/Runner.app Payload/
+          zip -r SimpleLive-TrollStore.ipa Payload
+      - name: 上传 iOS 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: SimpleLive-iOS-TrollStore
+          path: ./simple_live_app/SimpleLive-TrollStore.ipa
